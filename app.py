@@ -18,11 +18,11 @@ SUBJECTS   = ["Maths", "English", "Science", "Computer"]
 PASS_MARKS = 40
 
 # ---- Title ----
-st.title("📊 Student Marks Data Analysis System")
+st.title("Student Marks Data Analysis System")
 st.caption("BCA Minor Project — Python · Streamlit · pandas")
 
 # ---- File uploader ----
-uploaded = st.file_uploader("📂 Upload Excel file (.xlsx)", type=["xlsx", "xls"])
+uploaded = st.file_uploader("Upload Excel file (.xlsx)", type=["xlsx", "xls"])
 
 if uploaded is None:
     st.info("Please upload an Excel file to begin.")
@@ -60,12 +60,12 @@ st.success(f"✅ Loaded **{len(df)}** records from **{uploaded.name}**")
 
 # ---- Tabs ----
 tabs = st.tabs([
-    "📄 All Records",
-    "📈 Averages",
-    "🏆 Topper",
-    "✅ Pass / Fail",
-    "📊 Chart",
-    "⬇️ Downloads",
+    "All Records",
+    "Averages",
+    "Topper",
+    "Pass / Fail",
+    "Chart",
+    "Downloads",
 ])
 
 # Tab 1: Records
