@@ -57,6 +57,8 @@ html,body,[class*="css"],.stApp{font-family:'Inter',sans-serif}
 .stButton button:hover,.stDownloadButton button:hover{background:#6D5BD0}
 .stButton button p,.stDownloadButton button p,[data-testid="stFileUploader"] button p{color:#fff!important}
 [data-testid="stDataFrame"]{border-radius:16px;overflow:hidden}
+[data-testid="stWidgetLabel"] p,[data-testid="stFileUploader"] section *{color:#44445F!important}
+[data-testid="stFileUploader"] section button,[data-testid="stFileUploader"] section button *{color:#fff!important;fill:#fff!important}
 @L@{gap:30px!important;background:transparent!important;box-shadow:none!important;padding:0!important;border-radius:0!important;border-bottom:1px solid #D6D5EE!important}
 [data-baseweb="tab-highlight"],[data-baseweb="tab-border"]{display:none!important}
 @T@{background:transparent!important;border:0!important;border-radius:0!important;box-shadow:none!important;height:auto!important;padding:8px 2px 12px!important;display:inline-flex!important;align-items:center!important;color:#6B6B8A!important;opacity:1!important}
@@ -168,7 +170,7 @@ def clean(raw):
     return valid, skipped, dups
 
 
-st.markdown('<div class="hero"><h1>Take control of your results page</h1>'
+st.markdown('<div class="hero"><h1>Student Analysis</h1>'
             '<p>Upload one Excel sheet to see averages, toppers, pass and fail counts, '
             'charts and students at risk.</p></div>', unsafe_allow_html=True)
 
