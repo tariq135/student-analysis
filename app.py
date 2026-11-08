@@ -6,12 +6,9 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-st.set_page_config(page_title="Student Marks Analysis", layout="wide")
+st.set_page_config(page_title="Student Analysis", layout="wide")
 
-REQUIRED = ["RollNo", "Name", "Maths", "English", "Science", "Computer"]
-SUBJECTS = REQUIRED[2:]
-VIEW = REQUIRED + ["Total", "Percentage", "Failed In", "Status"]
-MAX_MARKS, PASS_MARKS, NEAR_MARKS = 100, 40, 5
+ID_COLS = ["RollNo", "Name"]
 PURPLE, NAVY = "#6D5BD0", "#1B1B3A"
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 LAYOUT = dict(template="simple_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -39,7 +36,6 @@ html,body,[class*="css"],.stApp{font-family:'Inter',sans-serif}
 .hero p{color:#6B6B8A;font-size:15px;max-width:520px;margin:0 auto;line-height:1.6}
 .card,.kpi,.dark{border-radius:20px;box-shadow:0 10px 34px rgba(60,55,130,.10)}
 .card{background:#fff;padding:20px 22px;margin-bottom:14px}
-.card h4{margin:0 0 4px;font-size:15px;font-weight:700;color:#1B1B3A}
 .card p{margin:0;color:#6B6B8A;font-size:13px;line-height:1.55}
 .kpi{background:#fff;padding:16px 18px;box-shadow:0 8px 28px rgba(60,55,130,.09)}
 .kpi .lbl{font-size:12px;color:#6B6B8A;font-weight:500}
@@ -51,7 +47,6 @@ html,body,[class*="css"],.stApp{font-family:'Inter',sans-serif}
 .dark .row{display:flex;gap:34px}
 .dark .big{font-size:26px;font-weight:700}
 .dark .sm{font-size:11px;color:#BDB9E8}
-.chip{display:inline-block;background:#fff;border-radius:10px;padding:6px 12px;margin:3px 4px 3px 0;font-size:12px;font-weight:600;box-shadow:0 4px 14px rgba(60,55,130,.10)}
 [data-testid="stFileUploader"] section{background:#fff;border:1.5px dashed #B9B4EC;border-radius:20px}
 .stButton button,.stDownloadButton button,[data-testid="stFileUploader"] button{background:#1B1B3A;border:0;border-radius:12px;font-weight:600}
 .stButton button:hover,.stDownloadButton button:hover{background:#6D5BD0}
@@ -129,7 +124,7 @@ def read_sheet(data, sheet):
 
 
 def normalise(df):
-    lookup = {c.lower(): c for c in REQUIRED}
+    lookup = {c.lower(): c for c in ID_COLS}
     df = df.copy()
     df.columns = [lookup.get("".join(ch for ch in str(c).lower() if ch.isalnum()), str(c).strip())
                   for c in df.columns]
@@ -149,24 +144,24 @@ def make_template():
     return buf.getvalue()
 
 
-def clean(raw):
+def clean(raw, subjects, max_marks):
     df = raw.dropna(how="all").copy()
     df.insert(0, "Excel Row", df.index + 2)
-    for s in SUBJECTS:
+    for s in subjects:
         df[s] = pd.to_numeric(df[s], errors="coerce")
     name = df["Name"].fillna("").astype(str).str.strip()
-    m = df[SUBJECTS]
+    m = df[subjects]
     issues = pd.DataFrame({
         "Blank or non-numeric marks": m.isna().any(axis=1),
-        f"Marks outside 0-{MAX_MARKS}": ((m < 0) | (m > MAX_MARKS)).any(axis=1),
-        "Missing Roll No or Name": df["RollNo"].isna() | (name == ""),
+        f"Marks outside 0-{max_marks}": ((m < 0) | (m > max_marks)).any(axis=1),
+        "Missing RollNo or Name": df["RollNo"].isna() | (name == ""),
     })
     bad = issues.any(axis=1)
-    skipped = df.loc[bad, ["Excel Row"] + REQUIRED].astype(str)
+    skipped = df.loc[bad, ["Excel Row"] + ID_COLS + subjects].astype(str)
     skipped["Reason"] = [", ".join(r[r].index) for _, r in issues[bad].iterrows()]
     valid = df[~bad].assign(Name=name[~bad], RollNo=df.loc[~bad, "RollNo"].map(fmt_roll))
     valid = valid.drop(columns="Excel Row").reset_index(drop=True)
-    dups = valid[valid["RollNo"].duplicated(keep=False)].sort_values("RollNo")[REQUIRED]
+    dups = valid[valid["RollNo"].duplicated(keep=False)].sort_values("RollNo")[ID_COLS + subjects]
     return valid, skipped, dups
 
 
@@ -176,10 +171,8 @@ st.markdown('<div class="hero"><h1>Student Analysis</h1>'
 
 uploaded = st.file_uploader("Upload your marks file (.xlsx)", type=["xlsx"])
 if uploaded is None:
-    chips = "".join(f'<span class="chip">{c}</span>' for c in REQUIRED)
-    st.markdown(f'<div class="card"><h4>Your sheet needs these columns</h4>'
-                f'<p style="margin-bottom:8px">Marks are read out of {MAX_MARKS} per subject. A student '
-                f'passes only when every subject is {PASS_MARKS} or above.</p>{chips}</div>',
+    st.markdown('<div class="card"><p>Your sheet needs RollNo and Name columns. Every other column is '
+                'treated as a subject, so you can add any subject by adding a column.</p></div>',
                 unsafe_allow_html=True)
     st.download_button("Download sample template", make_template(),
                        file_name="sample_marks.xlsx", mime=XLSX)
@@ -193,12 +186,26 @@ except Exception as e:
     st.error(f"Could not read the file. Please upload a valid .xlsx file. ({e})")
     st.stop()
 
-missing = [c for c in REQUIRED if c not in raw.columns]
-if missing:
-    st.error(f"Missing columns: {', '.join(missing)}. Found: {', '.join(map(str, raw.columns))}")
+if not set(ID_COLS) <= set(raw.columns):
+    st.error(f"Your sheet needs RollNo and Name columns. Found: {', '.join(raw.columns)}")
     st.stop()
 
-df, skipped, dups = clean(raw)
+others = [c for c in raw.columns if c not in ID_COLS]
+numeric = [c for c in others if pd.to_numeric(raw[c], errors="coerce").notna().any()]
+c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
+subjects = c1.multiselect("Subjects to analyse", others, default=numeric)
+max_marks = c2.number_input("Max marks", min_value=1, value=100)
+pass_mark = c3.number_input("Pass mark", min_value=0, value=40)
+near_mark = c4.number_input("Near-pass margin", min_value=0, value=5)
+
+if not subjects:
+    st.error("Select at least one subject.")
+    st.stop()
+if pass_mark > max_marks:
+    st.error("The pass mark cannot be higher than the max marks.")
+    st.stop()
+
+df, skipped, dups = clean(raw, subjects, max_marks)
 if not skipped.empty:
     st.warning(f"{len(skipped)} row(s) were skipped. Fix them in Excel and upload again.")
     with st.expander("See skipped rows"):
@@ -211,13 +218,14 @@ if df.empty:
     st.error("No valid records found after cleaning.")
     st.stop()
 
-df["Total"] = df[SUBJECTS].sum(axis=1)
-df["Percentage"] = (df["Total"] / (len(SUBJECTS) * MAX_MARKS) * 100).round(2)
-df["Failed In"] = df[SUBJECTS].lt(PASS_MARKS).apply(lambda r: ", ".join(r[r].index) or "-", axis=1)
+df["Total"] = df[subjects].sum(axis=1)
+df["Percentage"] = (df["Total"] / (len(subjects) * max_marks) * 100).round(2)
+df["Failed In"] = df[subjects].lt(pass_mark).apply(lambda r: ", ".join(r[r].index) or "-", axis=1)
 df["Status"] = df["Failed In"].eq("-").map({True: "Pass", False: "Fail"})
-df["Short By"] = (PASS_MARKS - df[SUBJECTS]).clip(lower=0).max(axis=1)
-df["Risk"] = df["Short By"].map(lambda x: "" if x == 0 else "Near pass" if x <= NEAR_MARKS else "Far below")
+df["Short By"] = (pass_mark - df[subjects]).clip(lower=0).max(axis=1)
+df["Risk"] = df["Short By"].map(lambda x: "" if x == 0 else "Near pass" if x <= near_mark else "Far below")
 
+VIEW = ID_COLS + subjects + ["Total", "Percentage", "Failed In", "Status"]
 n = len(df)
 passed = int((df["Status"] == "Pass").sum())
 failed = n - passed
@@ -237,14 +245,14 @@ with tabs[0]:
     show(df[VIEW])
 
 with tabs[1]:
-    kpis([(f"{s} average", f"{df[s].mean():.2f}") for s in SUBJECTS])
+    kpis([(f"{s} average", f"{df[s].mean():.2f}") for s in subjects])
     show(pd.DataFrame({
-        "Subject": SUBJECTS,
-        "Average": [round(df[s].mean(), 2) for s in SUBJECTS],
-        "Highest": [fmt(df[s].max()) for s in SUBJECTS],
-        "Scored by": [", ".join(df.loc[df[s] == df[s].max(), "Name"]) for s in SUBJECTS],
-        "Lowest": [fmt(df[s].min()) for s in SUBJECTS],
-        "Lowest by": [", ".join(df.loc[df[s] == df[s].min(), "Name"]) for s in SUBJECTS],
+        "Subject": subjects,
+        "Average": [round(df[s].mean(), 2) for s in subjects],
+        "Highest": [fmt(df[s].max()) for s in subjects],
+        "Scored by": [", ".join(df.loc[df[s] == df[s].max(), "Name"]) for s in subjects],
+        "Lowest": [fmt(df[s].min()) for s in subjects],
+        "Lowest by": [", ".join(df.loc[df[s] == df[s].min(), "Name"]) for s in subjects],
     }))
 
 with tabs[2]:
@@ -259,16 +267,16 @@ with tabs[2]:
             f'</div></div>', unsafe_allow_html=True)
 
 with tabs[3]:
-    st.caption(f"A student passes only with {PASS_MARKS} or more in every subject.")
+    st.caption(f"A student passes only with {pass_mark} or more in every subject.")
     view = st.radio("Show", ["All", "Pass", "Fail"], horizontal=True, label_visibility="collapsed")
     show(df[VIEW] if view == "All" else df.loc[df["Status"] == view, VIEW])
 
 with tabs[4]:
-    avgs = df[SUBJECTS].mean()
-    bar = px.bar(x=SUBJECTS, y=avgs.values, title="Average marks per subject",
+    avgs = df[subjects].mean()
+    bar = px.bar(x=subjects, y=avgs.values, title="Average marks per subject",
                  labels={"x": "", "y": "Average marks"}, color_discrete_sequence=[PURPLE])
     bar.update_traces(texttemplate="%{y:.1f}", textposition="outside", cliponaxis=False)
-    bar.update_yaxes(range=[0, MAX_MARKS]).update_layout(**LAYOUT)
+    bar.update_yaxes(range=[0, max_marks]).update_layout(**LAYOUT)
     pie = px.pie(names=["Pass", "Fail"], values=[passed, failed], hole=0.6, title="Pass rate",
                  color_discrete_sequence=[PURPLE, NAVY])
     pie.update_traces(textinfo="label+percent")
@@ -282,8 +290,8 @@ with tabs[4]:
         chart(pie)
 
 with tabs[5]:
-    st.caption(f"Students with any subject below {PASS_MARKS}. "
-               f"Near pass means the shortfall is {NEAR_MARKS} marks or less.")
+    st.caption(f"Students with any subject below {pass_mark}. "
+               f"Near pass means the shortfall is {near_mark} marks or less.")
     kpis([("At risk", len(at_risk)), ("Near pass", near), ("Far below", len(at_risk) - near)])
     if at_risk.empty:
         st.success("No students are at risk.")
@@ -298,7 +306,7 @@ with tabs[6]:
     report = "\n".join([
         "STUDENT MARKS ANALYSIS REPORT", "=" * 40,
         f"Total students : {n}", f"Passed         : {passed}", f"Failed         : {failed}", "",
-        "Subject averages:", *[f"  {s:<10}: {df[s].mean():.2f}" for s in SUBJECTS], "",
+        "Subject averages:", *[f"  {s}: {df[s].mean():.2f}" for s in subjects], "",
         "Topper(s):", *tops, "", "Students at risk:", *risk,
     ])
     xl = io.BytesIO()
